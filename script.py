@@ -86,7 +86,14 @@ def predict(w_list, testsets, last_rating=None, file=None):
         difficulties = map(lambda x: round(x, 2), difficulties)
         tmp["stability"] = list(stabilities)
         tmp["difficulty"] = list(difficulties)
-        tmp["p"] = power_forgetting_curve(tmp["delta_t"], tmp["stability"])
+        with torch.no_grad():
+            tmp["p"] = (
+                my_collection.model.power_forgetting_curve(
+                    tmp["delta_t"].values, tmp["stability"].values
+                )
+                .detach()
+                .numpy()
+            )
         p.extend(tmp["p"].tolist())
         y.extend(tmp["y"].tolist())
         if file:
