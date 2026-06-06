@@ -6,6 +6,33 @@ from utils import cum_concat
 from fsrs_optimizer import remove_outliers, remove_non_continuous_rows  # type: ignore
 
 
+def _cumulative_lists_by_card(df: pd.DataFrame, col: str) -> list:
+    """Per-card list of cumulative-prefix lists for ``col``, in df row order.
+
+    Bit-identical replacement for::
+
+        df.groupby("card_id", group_keys=False)[col].apply(
+            lambda x: cum_concat([[i] for i in x]))
+
+    but without the pandas per-group ``apply`` overhead (the dominant create_features
+    cost). Requires df sorted by ``card_id`` (guaranteed by _common_preprocessing, which
+    is exactly what the groupby-apply assignment also relies on). Values are kept as numpy
+    scalars (matching Series iteration), so ``str()`` and ``torch.tensor()`` downstream
+    produce identical results.
+    """
+    card_ids = df["card_id"].values
+    vals = list(df[col].values)
+    out: list = []
+    n = len(vals)
+    start = 0
+    for i in range(1, n + 1):
+        if i == n or card_ids[i] != card_ids[start]:
+            block = vals[start:i]
+            out.append([block[: j + 1] for j in range(len(block))])
+            start = i
+    return out
+
+
 class BaseFeatureEngineer(ABC):
     """
     Base abstract class for feature engineering
@@ -101,20 +128,26 @@ class BaseFeatureEngineer(ABC):
         Compute time and rating history records
         """
         # Calculate time history (non-seconds)
-        t_history_non_secs_list = df.groupby("card_id", group_keys=False)[
-            "delta_t"
-        ].apply(lambda x: cum_concat([[i] for i in x]))
+        t_history_non_secs_list = _cumulative_lists_by_card(df, "delta_t")
 
         # Calculate time history (seconds)
-        t_history_secs_list: Optional[pd.Series] = None
+        t_history_secs_list: Optional[list] = None
         if self.config.use_secs_intervals:
-            t_history_secs_list = df.groupby("card_id", group_keys=False)[
-                "delta_t_secs"
-            ].apply(lambda x: cum_concat([[i] for i in x]))
+            t_history_secs_list = _cumulative_lists_by_card(df, "delta_t_secs")
 
         # Calculate rating history
-        r_history_list = df.groupby("card_id", group_keys=False)["rating"].apply(
-            lambda x: cum_concat([[i] for i in x])
+        r_history_list = _cumulative_lists_by_card(df, "rating")
+
+        # Cache the per-card history lists so model-specific feature builders can reuse
+        # them via get_history_lists() instead of recomputing the same groupby/cum_concat.
+        # Bit-identical: get_time_history_list() groups the very column the cached list was
+        # built from (delta_t_secs when --secs, else delta_t; and after _set_time_histories
+        # reassigns delta_t := delta_t_secs, the --secs+equalize path groups identical values).
+        self._cached_r_history_list = r_history_list
+        self._cached_t_history_list = (
+            t_history_secs_list
+            if self.config.use_secs_intervals
+            else t_history_non_secs_list
         )
 
         # Calculate last rating
@@ -317,6 +350,12 @@ class BaseFeatureEngineer(ABC):
         Returns:
             Tuple of (time_history_list, rating_history_list)
         """
+        # Reuse the lists already computed in _compute_histories when available
+        # (set on this per-user engineer instance), avoiding a redundant recompute.
+        cached_t = getattr(self, "_cached_t_history_list", None)
+        cached_r = getattr(self, "_cached_r_history_list", None)
+        if cached_t is not None and cached_r is not None:
+            return cached_t, cached_r
         t_history_list = self.get_time_history_list(df)
         r_history_list = self.get_rating_history_list(df)
         return t_history_list, r_history_list
