@@ -49,7 +49,7 @@ Log Loss and RMSE (bins) measure calibration: how well predicted probabilities o
         - FSRS-7 sched. penalties: FSRS-7 with penalties that address 2 issues: extremely short intervals for same-day reviews at high (97-99%) desired retention and massive interval length jumps at low desired retention. They make scheduling based on FSRS-7 more reasonable (from the perspective of an average user) at the cost of making FSRS-7's predictive ability a little worse. In Anki, FSRS-7 should be shipped with both recency weighting and scheduling penalties enabled.
         - FSRS-7 preset: FSRS-7 where different presets have different parameters. If some preset has too few reviews for optimization, user-specific parameters (optimized on all data from this user) are used.
         - FSRS-7 deck: similar to above, but with different parameters for each deck.
-        - FSRS-7 100 epochs: FSRS-7 recency trained for 100 epochs instead of the default 9. Log Loss stops decreasing past ~15 epochs, so the extra optimization time buys almost nothing.
+        - FSRS-7 recency, 100 epochs: the same as FSRS-7 recency, but trained for 100 epochs instead of the default 9. Log Loss stops decreasing past ~15 epochs, so the extra optimization time buys almost nothing.
     - FSRS-rs: the Rust port of FSRS-6 with recency weighting. See also: https://github.com/open-spaced-repetition/fsrs-rs
     - HLR: the algorithm proposed by Duolingo. Its full name is Half-Life Regression. For further information, please refer to the [this paper](https://github.com/duolingo/halflife-regression).
     - Ebisu v2: [an algorithm that uses Bayesian statistics](https://fasiha.github.io/ebisu/) to update its estimate of memory half-life after every review.
@@ -103,7 +103,7 @@ For the sake of brevity, the following abbreviations are used in the "Input feat
 | RWKV-Curve | 2762884 | 0.3193±0.0039 | 0.0540±0.0010 | 0.7683±0.0019 | [Yes](#features-note) |
 | GRU | 503 | 0.3328±0.0041 | 0.0549±0.0010 | 0.7324±0.0021 | FIL, G, SR |
 | LSTM | 8869 | 0.3332±0.0041 | 0.05378±0.00094 | 0.7329±0.0020 | FIL, G, SR, AT |
-| FSRS-7 100 epochs | 34 | 0.3363±0.0042 | 0.05764±0.00096 | 0.7243±0.0021 | FIL, G, SR |
+| FSRS-7 recency, 100 epochs | 34 | 0.3363±0.0042 | 0.05764±0.00096 | 0.7243±0.0021 | FIL, G, SR |
 | MOVING-AVG | 0 | 0.3369±0.0042 | 0.05915±0.00082 | 0.7001±0.0025 | --- |
 | FSRS-7 recency | 34 | 0.3370±0.0042 | 0.0593±0.0010 | 0.7220±0.0021 | FIL, G, SR |
 | Logistic Regression | 34 | 0.3393±0.0042 | 0.0604±0.0010 | 0.7108±0.0023 | IL, FIL, G, SR |
@@ -144,7 +144,7 @@ Same-day reviews are used for evaluation. Here the probability of recall is calc
 | RWKV-Curve | 2762884 | 0.2974±0.0037 | 0.05438±0.00081 | 0.7964±0.0017 | [Yes](#features-note) |
 | LSTM | 8869 | 0.3140±0.0039 | 0.05200±0.00076 | 0.7622±0.0019 | FIL, G, SR, AT |
 | GRU | 503 | 0.3141±0.0039 | 0.05357±0.00084 | 0.7606±0.0019 | FIL, G, SR |
-| FSRS-7 100 epochs | 34 | 0.3177±0.0040 | 0.05605±0.00080 | 0.7533±0.0018 | FIL, G, SR |
+| FSRS-7 recency, 100 epochs | 34 | 0.3177±0.0040 | 0.05605±0.00080 | 0.7533±0.0018 | FIL, G, SR |
 | FSRS-7 recency | 34 | 0.3178±0.0040 | 0.05715±0.00081 | 0.7522±0.0018 | FIL, G, SR |
 | FSRS-7 recency + sched. penalties | 34 | 0.3188±0.0040 | 0.05861±0.00080 | 0.7506±0.0018 | FIL, G, SR |
 | Logistic Regression | 34 | 0.3195±0.0040 | 0.05815±0.00082 | 0.7446±0.0020 | IL, FIL, G, SR |
