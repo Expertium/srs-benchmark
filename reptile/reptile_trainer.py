@@ -1,26 +1,24 @@
-import copy
 import os
-import time
-from itertools import chain
-from pathlib import Path
-
-import numpy as np
 import pandas as pd
+from sklearn.model_selection import TimeSeriesSplit  # type: ignore
 import torch
-import wandb
-from fsrs_optimizer import (
+import torch.nn as nn
+from torch import Tensor
+from pathlib import Path
+from config import create_parser, Config
+from fsrs_optimizer import (  # type: ignore
     BatchDataset,
     BatchLoader,
     DevicePrefetchLoader,
 )
 from multiprocess import Pool  # type: ignore
-from shape_extensions import IntVar
-from sklearn.model_selection import TimeSeriesSplit
-from torch import Tensor, nn
-
-from config import Config, create_parser
-from features import create_features
+import copy
+import numpy as np
 from models.trainable import TrainableModel
+import wandb
+import time
+from itertools import chain
+from features import create_features
 
 BATCH_SIZE = 16384
 BATCH_SIZE_EXP = 1.0
@@ -65,7 +63,10 @@ DEFAULT_FINETUNE_PARAMS = {
 }
 
 parser = create_parser()
-args, _ = parser.parse_known_args()
+# parse_args(), NOT parse_known_args(): an unrecognized flag must be a hard error,
+# because output file names are derived from the flags (a silently dropped flag
+# would write to the wrong file).
+args = parser.parse_args()
 config = Config(args)
 
 MODEL_NAME = args.algo
@@ -134,23 +135,14 @@ def print_grad_norm(model):
     print(torch.cat(grads).norm())
 
 
-def compute_data_loss[SeqLen: IntVar, BatchSize: IntVar, InputDims: IntVar](
-    model: TrainableModel[InputDims, int],
-    batch: tuple[
-        Tensor[[SeqLen, BatchSize, InputDims]],
-        Tensor[[BatchSize]],
-        Tensor[[BatchSize]],
-        Tensor[[BatchSize]],
-        Tensor[[BatchSize]],
-    ],
+def compute_data_loss(
+    model: TrainableModel,
+    batch: tuple[Tensor, Tensor, Tensor, Tensor, Tensor],
     batch_size_exp=1.0,
 ):
     sequences, delta_ts, labels, seq_lens, weights = batch
     real_batch_size = seq_lens.shape[0]
-    result: dict[str, Tensor[[]] | Tensor[[BatchSize]] | Tensor[[BatchSize, int]]] = {
-        "labels": labels,
-        "weights": weights,
-    }
+    result = {"labels": labels, "weights": weights}
     outputs = model.batch_process(sequences, delta_ts, seq_lens, real_batch_size)
     result.update(outputs)
     loss_fn = nn.BCELoss(reduction="none")
@@ -162,13 +154,13 @@ def compute_data_loss[SeqLen: IntVar, BatchSize: IntVar, InputDims: IntVar](
     )
 
 
-def compute_df_loss(model, df: pd.DataFrame):
+def compute_df_loss(model, df):
     df_batchdataset = BatchDataset(
         df.copy(),
         BATCH_SIZE,
         sort_by_length=False,
         max_seq_len=MAX_SEQ_LEN,
-        device=DEVICE,  # type: ignore
+        device=DEVICE,
     )
     df_loader = BatchLoader(df_batchdataset, shuffle=False)
     total = 0.0
@@ -261,6 +253,7 @@ def finetune_adapt(
         target_device=DEVICE,
     )
     for step in range(inner_steps):
+        batch_count = 0
         for batch in device_loader:
             inner_opt.zero_grad()
             batch_inner_loss, inner_loss_scaled, _ = compute_data_loss(
@@ -273,6 +266,8 @@ def finetune_adapt(
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip_norm)
             inner_opt.step()
+            batch_count += 1
+
         inner_scheduler.step()
 
     if inner_loss is None:
@@ -364,7 +359,7 @@ def finetune(df, model, inner_opt_state, finetune_params=DEFAULT_FINETUNE_PARAMS
 
 
 def evaluate(
-    df_list: list[pd.DataFrame],
+    df_list,
     model,
     inner_opt_state,
     name,
@@ -401,7 +396,7 @@ def evaluate(
             with torch.no_grad():
                 finetuned_model.eval()
                 test_split_loss = compute_df_loss(finetuned_model, test_set)
-                test_loss += test_split_loss.item()  # type: ignore
+                test_loss += test_split_loss.item()
                 test_n += len(test_set)
 
         avg_test_loss = test_loss / test_n
@@ -572,7 +567,7 @@ def process_user(user_id):
 
 
 def main():
-    from models import LSTM, Transformer
+    from models import Transformer, LSTM
 
     if MODEL_NAME == "Transformer":
         model = Transformer(config)

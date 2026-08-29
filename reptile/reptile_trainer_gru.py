@@ -1,24 +1,23 @@
-import copy
-import time
-from itertools import chain
-from pathlib import Path
-
-import numpy as np
+import os
 import pandas as pd
+from sklearn.model_selection import TimeSeriesSplit  # type: ignore
 import torch
-from fsrs_optimizer import (
+import torch.nn as nn
+from torch import Tensor
+from pathlib import Path
+from config import create_parser, Config
+from fsrs_optimizer import (  # type: ignore
     BatchDataset,
     BatchLoader,
     DevicePrefetchLoader,
 )
 from multiprocess import Pool  # type: ignore
-from shape_extensions import IntVar
-from sklearn.model_selection import TimeSeriesSplit
-from torch import Tensor, nn
-
-from config import Config, create_parser
-from features import create_features
+import copy
+import numpy as np
 from models.trainable import TrainableModel
+import time
+from itertools import chain
+from features import create_features
 
 BATCH_SIZE = 8192
 BATCH_SIZE_EXP = 1.0
@@ -28,46 +27,52 @@ WARMUP_STEPS = OUTER_STEPS // 10
 CHECKPOINT_STEPS = 25000
 LOG_STEPS = 25000
 
+# Hyperparameters below come from Optuna study 'gru-joint-GRU-short-secs',
+# best trial 24 (0.303259 vs the 0.303419 baseline, -0.000160), 2026-08-25.
+# The earlier values came from a search that ran in the LSTM regime by mistake
+# (reptile_optuna_gru imported reptile_trainer instead of reptile_trainer_gru).
 OUTER_LR_START = 0.02
-INNER_ADAM_BETA1 = 0.4077
-INNER_ADAM_BETA2 = 0.9570
-INNER_WEIGHT_DECAY = 0.01
+INNER_ADAM_BETA1 = 0.1753167630791112
+INNER_ADAM_BETA2 = 0.9723760956625273
+INNER_WEIGHT_DECAY = 0.0077630630298417685
 
-OUTER_ADAM_BETA1 = 0.8437
-OUTER_ADAM_BETA2 = 0.9620
-OUTER_WEIGHT_DECAY = 0.05376
+OUTER_ADAM_BETA1 = 0.8310994387868771
+OUTER_ADAM_BETA2 = 0.917963391344383
+OUTER_WEIGHT_DECAY = 0.004897254413931353
 
-# Log loss=0.3076
 DEFAULT_TRAIN_ADAPT_PARAMS = {
-    "lr_start_raw": 0.005049,
-    "lr_middle_raw": 0.0007886,
-    "lr_end_raw": 0.003383,
-    "warmup_steps": 3,
-    "batch_size_exp": 0.934,
-    "clip_norm": 303.3,
-    "reg_scale": 0.00043071,
-    "inner_steps": 29,
+    "lr_start_raw": 0.011727707082053389,
+    "lr_middle_raw": 0.0002072757961427307,
+    "lr_end_raw": 0.0018138392662748791,
+    "warmup_steps": 6,
+    "batch_size_exp": 0.9468636920117225,
+    "clip_norm": 24.734175065647523,
+    "reg_scale": 3.018705711307026e-08,
+    "inner_steps": 18,
     "weight_decay": INNER_WEIGHT_DECAY,
 }
 
 DEFAULT_FINETUNE_PARAMS = {
-    "lr_start_raw": 0.002470,
-    "lr_middle_raw": 0.005842,
-    "lr_end_raw": 0.001227,
-    "warmup_steps": 7,
-    "batch_size_exp": 1.155,
-    "clip_norm": 270.9,
-    "reg_scale": 0.0007204,
-    "inner_steps": 14,
-    "recency_weight": 5.242,
-    "recency_degree": 2.518,
-    "weight_decay": 0.03116,
+    "lr_start_raw": 0.0006251171233448489,
+    "lr_middle_raw": 0.009734172583802481,
+    "lr_end_raw": 0.0023871381889009552,
+    "warmup_steps": 6,
+    "batch_size_exp": 1.1846219825046307,
+    "clip_norm": 167.86289911112,
+    "reg_scale": 1.8715615952497154e-05,
+    "inner_steps": 21,
+    "recency_weight": 20.328475441783525,
+    "recency_degree": 2.8843952981152463,
+    "weight_decay": 0.2975369763258536,
     "inner_adam_beta1": INNER_ADAM_BETA1,
     "inner_adam_beta2": INNER_ADAM_BETA2,
 }
 
 parser = create_parser()
-args, _ = parser.parse_known_args()
+# parse_args(), NOT parse_known_args(): an unrecognized flag must be a hard error,
+# because output file names are derived from the flags (a silently dropped flag
+# would write to the wrong file).
+args = parser.parse_args()
 config = Config(args)
 
 MODEL_NAME = args.algo
@@ -139,15 +144,9 @@ def print_grad_norm(model):
 from utils import batch_process_wrapper
 
 
-def compute_data_loss[SeqLen: IntVar, BatchSize: IntVar, InputDims: IntVar](
-    model: TrainableModel[InputDims, int],
-    batch: tuple[
-        Tensor[[SeqLen, BatchSize, InputDims]],
-        Tensor[[BatchSize]],
-        Tensor[[BatchSize]],
-        Tensor[[BatchSize]],
-        Tensor[[BatchSize]],
-    ],
+def compute_data_loss(
+    model: TrainableModel,
+    batch: tuple[Tensor, Tensor, Tensor, Tensor, Tensor],
     batch_size_exp=1.0,
 ):
     result = batch_process_wrapper(model, batch)
@@ -194,7 +193,7 @@ def adapt_on_data(
     reg_scale = train_adapt_params["reg_scale"]
     inner_steps = train_adapt_params["inner_steps"]
 
-    # Convert raw LRs: we know ~3e-3 works well for a 16k batch size.
+    # Convert raw LRs to absolute LRs via the batch-size normalisation.
     lr_start = lr_start_raw * (16000 ** (1.0 - batch_size_exp))
     lr_middle = lr_middle_raw * (16000 ** (1.0 - batch_size_exp))
     lr_end = lr_end_raw * (16000 ** (1.0 - batch_size_exp))
@@ -257,6 +256,7 @@ def finetune_adapt(
         target_device=DEVICE,
     )
     for step in range(inner_steps):
+        batch_count = 0
         for batch in device_loader:
             inner_opt.zero_grad()
             batch_inner_loss, inner_loss_scaled, _ = compute_data_loss(
@@ -269,6 +269,8 @@ def finetune_adapt(
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), clip_norm)
             inner_opt.step()
+            batch_count += 1
+
         inner_scheduler.step()
 
     if inner_loss is None:
@@ -346,7 +348,7 @@ def finetune(df, model, inner_opt_state, finetune_params=DEFAULT_FINETUNE_PARAMS
     # when those values differ would silently corrupt the second-moment
     # estimates.  Instead we warm-start only the exp-avg state via
     # inner_opt_state if the betas happen to match, and accept cold-start
-    # cost otherwise — which is fine because inner_steps is small (~20).
+    # cost otherwise — which is fine because inner_steps is small.
     inner_opt = get_inner_opt(
         learner.parameters(),
         beta1=inner_adam_beta1,
@@ -632,10 +634,15 @@ def main():
     all_users = train_users + test_users
 
     time_start = time.time()
+    # multiprocess.Pool deadlocks on this Windows/CUDA setup (CUDA already initialised
+    # in the parent before spawn). With PROCESSES==1 the Pool buys nothing, so load
+    # sequentially in-process; results are identical, only the load path differs.
     if PROCESSES > 1:
         print(f"Processes: {PROCESSES} is only used for getting the data.")
-    with Pool(processes=PROCESSES) as pool:
-        results = pool.map(process_user, all_users)
+        with Pool(processes=PROCESSES) as pool:
+            results = pool.map(process_user, all_users)
+    else:
+        results = [process_user(user_id) for user_id in all_users]
 
     for user, result in results:
         df_dict[user] = result

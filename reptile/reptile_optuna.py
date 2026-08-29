@@ -1,24 +1,25 @@
-import random
-from functools import partial
-
-import optuna  # type: ignore
-import pandas as pd
+from sklearn.model_selection import TimeSeriesSplit  # type: ignore
 import torch
-from multiprocess import Pool  # type: ignore
-from sklearn.model_selection import TimeSeriesSplit
-
-from config import Config, create_parser
-from reptile_trainer import (
+from config import create_parser, Config
+from reptile.reptile_trainer import (
     DEFAULT_FINETUNE_PARAMS,
-    compute_df_loss,
     finetune,
     get_inner_opt,
+    compute_df_loss,
 )
+import pandas as pd
+import optuna  # type: ignore
+from functools import partial
+import random
+from multiprocess import Pool  # type: ignore
 
 optuna_nonce = random.randint(0, 100000000)
 
 parser = create_parser()
-args, _ = parser.parse_known_args()
+# parse_args(), NOT parse_known_args(): an unrecognized flag must be a hard error,
+# because output file names are derived from the flags (a silently dropped flag
+# would write to the wrong file).
+args = parser.parse_args()
 config = Config(args)
 
 ENSURE_RESET = False  # Trade speed but try to ensure that no data leakage is going on by reloading the model from storage.
@@ -111,7 +112,7 @@ def objective(trial, df_list, model, inner_opt_state):
 
 def main():
     from features import create_features
-    from models import LSTM, Transformer
+    from models import Transformer, LSTM
 
     def process_user(user_id):
         print("Process:", user_id)
