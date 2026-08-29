@@ -1,7 +1,5 @@
 import json
 import re
-import numpy as np
-import matplotlib.pyplot as plt
 import traceback
 from functools import wraps
 from itertools import accumulate
@@ -448,7 +446,7 @@ def evaluate(y, p, df, file_name, user_id, config: Config, w_list=None):
         raw = json.dumps(
             {
                 "user": int(user_id),
-                "p": list(map(lambda x: round(x, 4), p)),
+                "p": [round(x, 4) for x in p],
                 "y": list(map(int, y)),
             },
             ensure_ascii=False,

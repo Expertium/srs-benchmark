@@ -99,7 +99,9 @@ def _compute_table_row(task):
     inputs -- never on a shared RNG stream, and never on the order models are processed
     in. Row order is restored by the Log Loss sort afterwards.
     """
-    (model, n_param, input_features, display_name, common_set, scale, table_metrics) = task
+    (model, n_param, input_features, display_name, common_set, scale, table_metrics) = (
+        task
+    )
     sort_key = float("inf")
     m = []
     sizes = []
@@ -107,7 +109,7 @@ def _compute_table_row(task):
     if not result_file.exists():
         return None
     with open(result_file, "r") as f:
-        data = [json.loads(x) for x in f.readlines()]
+        data = [json.loads(x) for x in f]
     for result in data:
         if common_set and result["user"] not in common_set:
             continue
@@ -133,7 +135,7 @@ def _compute_table_row(task):
             cells.append("N/A")
             means.append(None)
         else:
-            wmean, wstd = weighted_avg_and_std(metrics, size)
+            wmean, _wstd = weighted_avg_and_std(metrics, size)
             CI = confidence_interval(metrics, size)
             rounded_mean, rounded_CI = sigdig(wmean, CI)
             if metric == "LogLoss":
@@ -399,9 +401,7 @@ if __name__ == "__main__":
                 continue
             print(f"Total number of users: {len(sizes)}")
             print(f"Total number of reviews: {sum(sizes)}")
-            for scale, size_base in (
-                ("users", np.ones_like(sizes)),
-            ):
+            for scale, size_base in (("users", np.ones_like(sizes)),):
                 print(f"Weighted average by {scale}:")
                 for metric in ("LogLoss", "RMSE(bins)", "AUC"):
                     metrics_list = [item.get(metric) for item in m]
@@ -418,7 +418,9 @@ if __name__ == "__main__":
                         print(f"{display_name} {metric} (mean±std): N/A")
                     else:
                         wmean, wstd = weighted_avg_and_std(metrics, size)
-                        print(f"{display_name} {metric} (mean±std): {wmean:.4f}±{wstd:.4f}")
+                        print(
+                            f"{display_name} {metric} (mean±std): {wmean:.4f}±{wstd:.4f}"
+                        )
                 print()
 
             # print(f"LogLoss 99%: {round(np.percentile(np.array([item['LogLoss'] for item in m]), 99), 4)}")
@@ -465,7 +467,9 @@ if __name__ == "__main__":
                 # dump, not a table row -- it duplicates a real entry further down.
                 if n_param is not None
             ]
-            _workers = max(1, min(int(os.environ.get("SRSB_TABLE_WORKERS", "4")), len(tasks)))
+            _workers = max(
+                1, min(int(os.environ.get("SRSB_TABLE_WORKERS", "4")), len(tasks))
+            )
             with ProcessPoolExecutor(max_workers=_workers) as _ex:
                 table_rows = [
                     r for r in _ex.map(_compute_table_row, tasks) if r is not None
@@ -491,5 +495,7 @@ if __name__ == "__main__":
                     for ci, c in enumerate(cells)
                 ]
                 print(
-                    f"| {shown_name} | {n_param} | " + " | ".join(shown) + f" | {feats} |"
+                    f"| {shown_name} | {n_param} | "
+                    + " | ".join(shown)
+                    + f" | {feats} |"
                 )

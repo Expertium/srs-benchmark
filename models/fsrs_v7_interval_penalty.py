@@ -24,7 +24,9 @@ Why Newton in log(t) space and the implicit-differentiation (IFT) lift
 """
 
 from __future__ import annotations
+
 import math
+
 import torch
 
 # ── physical constants ────────────────────────────────────────────────────────
@@ -113,8 +115,11 @@ def _interval_differentiable(
     state, which itself depends on w through earlier stability updates)."""
     w = model.w
     # ── Phase 1: Newton in log(t) with plain Python floats (no autograd graph) ───
+    # pyrefly: ignore [bad-argument-type]
     s_f = float(s.detach())
+    # pyrefly: ignore [bad-argument-type]
     ss_f = float(s_short.detach())
+    # pyrefly: ignore [bad-argument-type]
     d_f = float(d.detach())
     w23, w24, w25, w26 = float(w[23]), float(w[24]), float(w[25]), float(w[26])
     w27, w28, w29, w30 = float(w[27]), float(w[28]), float(w[29]), float(w[30])
@@ -205,7 +210,7 @@ def fsrs7_interval_growth_penalty(
         p1 = _fsrs7_interval_growth_penalty_impl(
             model, n_reviews=n_reviews, target_dr=target_dr, n_newton=n_newton
         )
-    except Exception as e1:
+    except Exception as e1:  # noqa: BLE001 -- a penalty failure must not kill training
         print(f"Error when calculating penalty 1: {e1}")
         p1 = w.new_zeros(())
     if not torch.isfinite(p1):
@@ -215,7 +220,7 @@ def fsrs7_interval_growth_penalty(
         p2 = _fsrs7_short_interval_penalty_impl(
             model, n_reviews=n_reviews, n_newton=n_newton, target_drs=target_drs
         )
-    except Exception as e2:
+    except Exception as e2:  # noqa: BLE001 -- a penalty failure must not kill training
         print(f"Error when calculating penalty 2: {e2}")
         p2 = w.new_zeros(())
     if not torch.isfinite(p2):

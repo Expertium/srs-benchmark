@@ -219,7 +219,9 @@ class Config:
         self.two_buttons: bool = args.two_buttons
         self.only_S0: bool = args.S0
         self.sched_penalties: bool = args.sched_penalties  # only for FSRS-7
-        self.use_compile: bool = args.compile  # torch.compile FSRS-7 forward (FSRS-7 only)
+        self.use_compile: bool = (
+            args.compile
+        )  # torch.compile FSRS-7 forward (FSRS-7 only)
         self.save_evaluation_file: bool = args.file
         self.generate_plots: bool = args.plot
         self.save_weights: bool = args.weights

@@ -112,8 +112,10 @@ class Trainer:
         # path; default is step.)
         if config.use_compile and config.model_name in _FSRS_COMPILE_OK:
             if os.environ.get("SRSB_COMPILE_FORWARD"):
+                # pyrefly: ignore [missing-attribute]
                 self.model.forward = torch.compile(self.model.forward, dynamic=True)
             else:
+                # pyrefly: ignore [missing-attribute]
                 self.model.step = torch.compile(self.model.step, dynamic=True)
         self.model.initialize_parameters(train_set)
 
@@ -286,14 +288,14 @@ def _configure_process_device(device_id: int | None) -> None:
     config.device = torch.device(f"cuda:{device_id}")
     if config.model_name == "LSTM":
         try:
-            import reptile.reptile_trainer as reptile_trainer
+            from reptile import reptile_trainer
 
             reptile_trainer.DEVICE = config.device
         except ImportError:
             pass
     elif config.model_name == "GRU":
         try:
-            import reptile.reptile_trainer_gru as reptile_trainer_gru
+            from reptile import reptile_trainer_gru
 
             reptile_trainer_gru.DEVICE = config.device
         except ImportError:
@@ -355,7 +357,7 @@ def _fit_trainable_weights(train_df: pd.DataFrame) -> Any:
         return get_model_state(model)
 
     if config.model_name == "LSTM":
-        from reptile.reptile_trainer import get_inner_opt, finetune
+        from reptile.reptile_trainer import finetune, get_inner_opt
 
         model = model.to(config.device)
         inner_opt = get_inner_opt(
@@ -374,7 +376,7 @@ def _fit_trainable_weights(train_df: pd.DataFrame) -> Any:
             torch.mps.empty_cache()
         return weights
     elif config.model_name == "GRU":
-        from reptile.reptile_trainer_gru import get_inner_opt, finetune
+        from reptile.reptile_trainer_gru import finetune, get_inner_opt
 
         model = model.to(config.device)
         inner_opt = get_inner_opt(
@@ -407,7 +409,10 @@ def _fit_trainable_weights(train_df: pd.DataFrame) -> Any:
 
 
 @catch_exceptions
-def process(user_id: int, device_id: int | None = None) -> tuple[dict, dict | None]:
+# `raw` is a pre-serialized JSON *string* (see the note in utils.evaluate): the heavy
+# json.dumps is done in the worker, not the serial collector, so what comes back is a
+# ready line rather than a dict.
+def process(user_id: int, device_id: int | None = None) -> tuple[dict, str | None]:
     """Main processing function for all models."""
     plt.close("all")
     _configure_process_device(device_id)

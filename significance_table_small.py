@@ -21,8 +21,10 @@ def _sort_models_by_dominance(df, models):
     cols = [df[f"{m}, LogLoss"].to_numpy() for m in models]
     k = len(models)
     win = np.array(
-        [[float(np.mean(cols[i] <= cols[j])) if i != j else 0.0 for j in range(k)]
-         for i in range(k)]
+        [
+            [float(np.mean(cols[i] <= cols[j])) if i != j else 0.0 for j in range(k)]
+            for i in range(k)
+        ]
     )
     copeland = (win >= 0.5).sum(axis=1)
     order = sorted(range(k), key=lambda i: (copeland[i], win[i].sum()), reverse=True)

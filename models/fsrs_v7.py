@@ -1,7 +1,8 @@
-from typing import List, Optional
-import torch
-from torch import nn, Tensor
+from typing import ClassVar
+
 import pandas as pd
+import torch
+from torch import Tensor, nn
 
 from config import Config
 from models.fsrs_v6 import FSRS6, FSRS6ParameterClipper
@@ -33,8 +34,8 @@ class FSRS7ParameterClipper(FSRS6ParameterClipper):
     # in index order. Applied as one vectorized clamp below (bit-identical to the 34
     # per-index clamps it replaces, just one elementwise op instead of 34).
     # fmt: off
-    _CLIP_LO = [0.0001, 0.0001, 0.0001, 0.0001, 1.0, 0.001, 0.1, 0.0, 0.0, 0.3, 0.01, 0.1, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 0.001, 0.001, 0.0, 0.0, 1.0, 0.01, 0.01, 0.2, 0.5, 0.01, 0.1, 0.0, 0.1, 0.0, 0.0, 0.0]
-    _CLIP_HI = [50.0, 100.0, 100.0, 100.0, 10.0, 4.0, 4.0, 4.0, 1.2, 3.0, 1.5, 1.0, 3.5, 1.0, 7.0, 4.0, 2.0, 6.0, 1.5, 1.0, 5.0, 1.0, 7.0, 0.25, 0.95, 0.85, 0.99, 1.0, 1.0, 0.9, 1.1, 1.0, 0.6, 0.6]
+    _CLIP_LO: ClassVar[list[float]] = [0.0001, 0.0001, 0.0001, 0.0001, 1.0, 0.001, 0.1, 0.0, 0.0, 0.3, 0.01, 0.1, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 0.001, 0.001, 0.0, 0.0, 1.0, 0.01, 0.01, 0.2, 0.5, 0.01, 0.1, 0.0, 0.1, 0.0, 0.0, 0.0]
+    _CLIP_HI: ClassVar[list[float]] = [50.0, 100.0, 100.0, 100.0, 10.0, 4.0, 4.0, 4.0, 1.2, 3.0, 1.5, 1.0, 3.5, 1.0, 7.0, 4.0, 2.0, 6.0, 1.5, 1.0, 5.0, 1.0, 7.0, 0.25, 0.95, 0.85, 0.99, 1.0, 1.0, 0.9, 1.1, 1.0, 0.6, 0.6]
     # fmt: on
 
     def __call__(self, module):
@@ -83,7 +84,7 @@ class FSRS7(FSRS6):
 
     # Default parameter tuner and hyperparameter tuner can be found in
     # https://github.com/Expertium/fsrs-rs-speed-autoresearch
-    init_w = [
+    init_w: ClassVar[list[float]] = [
         0.1104,
         2.2395,
         3.9221,
@@ -120,7 +121,7 @@ class FSRS7(FSRS6):
         0.3048,  # Forgetting curve
     ]
 
-    def __init__(self, config: Config, w: Optional[List[float]] = None):
+    def __init__(self, config: Config, w: list[float] | None = None):
         super().__init__(config)
         if w is None:
             w = self.init_w
@@ -284,7 +285,9 @@ class FSRS7(FSRS6):
         rating_idx = rating.long().clamp(1, 4) - 1
         init_s_long = self.w[rating_idx]  # initial stability by rating (w[0..3])
         init_d = self.init_d(rating).clamp(D_MIN, D_MAX)
-        init_s_short = 0.8 * init_s_long  # short-term S starts at 0.8 * initial long-term S
+        init_s_short = (
+            0.8 * init_s_long
+        )  # short-term S starts at 0.8 * initial long-term S
 
         # Update path.
         last_s = state[:, 0].clamp(self.config.s_min, S_MAX)
@@ -311,7 +314,7 @@ class FSRS7(FSRS6):
         return torch.stack([new_s_long, new_s_short, new_d], dim=1)
 
     def forward(
-        self, inputs: Tensor, state: Optional[Tensor] = None
+        self, inputs: Tensor, state: Tensor | None = None
     ) -> tuple[Tensor, Tensor]:
         """
         :param inputs: shape[seq_len, batch_size, 2]
@@ -363,6 +366,7 @@ class FSRS7(FSRS6):
             sched_penalty_1 = self._zero_penalty
             sched_penalty_2 = self._zero_penalty
         L2_penalty = torch.sum(
+            # pyrefly: ignore [missing-attribute]
             torch.square(self.w - self.init_w_tensor) / torch.square(self._l2_sigma)
         )
         output["penalty"] = (
