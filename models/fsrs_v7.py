@@ -279,6 +279,7 @@ class FSRS7(FSRS6):
         # so where() picks exactly what the branch would have. The discarded update-path
         # values at step 0 stay finite (inputs clamped to s_min / D_MIN), so the where
         # gradient has no 0*NaN issue. (Verified fwd + bwd byte-identical.)
+        # pyrefly: ignore [missing-attribute]
         is_first = (state == 0).all(dim=1)
 
         # First-review init path.
